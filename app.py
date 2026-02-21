@@ -4,9 +4,22 @@ import numpy as np
 
 app = Flask(__name__)
 
+CHAMPIONNATS = {
+    'F1': 'Ligue 1 (France)',
+    'E0': 'Premier League (Angleterre)',
+    'SP1': 'LaLiga (Espagne)',
+    'D1': 'Bundesliga (Allemagne)',
+    'I1': 'Serie A (Italie)'
+}
+CHAMPIONNAT_DEFAUT = 'F1'
+MODELES_CHAMPIONNAT = {}
+
 # --- CHARGEMENT DES DONNÉES ---
-def charger_donnees():
-    df = pd.read_csv('https://www.football-data.co.uk/mmz4281/2526/F1.csv')
+def charger_donnees(championnat=CHAMPIONNAT_DEFAUT):
+    if championnat not in CHAMPIONNATS:
+        raise ValueError("Championnat invalide")
+
+    df = pd.read_csv(f'https://www.football-data.co.uk/mmz4281/2526/{championnat}.csv')
     df = df[['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG']]
     df.columns = ['home_team', 'away_team', 'home_goals', 'away_goals']
     
@@ -90,12 +103,30 @@ def predire_et_simuler(equipe_dom, equipe_ext, stats, avg_h, avg_a, n_simulation
         'cote_2': round(100 / prob_2, 2) if prob_2 > 0 else float('inf')
     }
 
+def charger_modele_championnat(championnat=CHAMPIONNAT_DEFAUT, force_reload=False):
+    if championnat not in CHAMPIONNATS:
+        raise ValueError("Championnat invalide")
+
+    if force_reload or championnat not in MODELES_CHAMPIONNAT:
+        df = charger_donnees(championnat)
+        stats_equipes, avg_home, avg_away = entrainer_modele(df, span=10)
+        equipes = sorted(stats_equipes.index.tolist())
+        MODELES_CHAMPIONNAT[championnat] = {
+            'stats_equipes': stats_equipes,
+            'avg_home': avg_home,
+            'avg_away': avg_away,
+            'equipes': equipes
+        }
+
+    return MODELES_CHAMPIONNAT[championnat]
+
 # --- CHARGEMENT AU DÉMARRAGE ---
-print("⏳ Chargement des données...")
-df = charger_donnees()
-print("⏳ Entraînement du modèle...")
-stats_equipes, avg_home, avg_away = entrainer_modele(df, span=10)
-equipes = sorted(stats_equipes.index.tolist())
+print(f"⏳ Chargement des données {CHAMPIONNATS[CHAMPIONNAT_DEFAUT]}...")
+modele_defaut = charger_modele_championnat(CHAMPIONNAT_DEFAUT)
+stats_equipes = modele_defaut['stats_equipes']
+avg_home = modele_defaut['avg_home']
+avg_away = modele_defaut['avg_away']
+equipes = modele_defaut['equipes']
 print("✅ Modèle prêt!")
 
 # --- TEMPLATE HTML ---
@@ -105,364 +136,414 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ligue 1 Match Prediction</title>
+    <title>Prédictions Football Top 5</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-            background: #f5f7fa;
-            color: #333;
+            background: #f7f9fc;
+            color: #0f172a;
             line-height: 1.6;
         }
-        
+
         .header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+            background: #0f172a;
             color: white;
-            padding: 40px 20px;
+            padding: 42px 20px 36px;
             text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
-        
+
         .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 8px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
+            font-size: 2rem;
+            margin-bottom: 6px;
+            font-weight: 750;
+            letter-spacing: -0.02em;
         }
-        
+
         .header p {
-            font-size: 1.05em;
-            opacity: 0.9;
-            font-weight: 300;
+            font-size: 0.98rem;
+            opacity: 0.86;
+            font-weight: 400;
         }
-        
+
         .container {
-            max-width: 1200px;
+            max-width: 980px;
             margin: 0 auto;
-            padding: 40px 20px;
+            padding: 28px 18px 48px;
         }
-        
+
         .main-card {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            padding: 40px;
-            margin-bottom: 30px;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+            padding: 28px;
+            margin-bottom: 18px;
         }
-        
+
+        .form-title {
+            font-size: 1.05rem;
+            color: #0f172a;
+            margin-bottom: 16px;
+            font-weight: 700;
+        }
+
         .form-section {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
+            gap: 16px;
+            margin-bottom: 18px;
         }
-        
+
         @media (max-width: 768px) {
             .form-section {
                 grid-template-columns: 1fr;
             }
+
+            .main-card {
+                padding: 20px;
+            }
+
+            .button-section {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
         }
-        
+
         .form-group {
             display: flex;
             flex-direction: column;
         }
-        
+
         label {
-            font-size: 0.95em;
+            font-size: 0.79rem;
             font-weight: 600;
-            color: #1e3a8a;
-            margin-bottom: 10px;
+            color: #334155;
+            margin-bottom: 8px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.06em;
         }
-        
+
         select {
-            padding: 12px 15px;
-            border: 1.5px solid #e0e7ff;
-            border-radius: 8px;
-            font-size: 1em;
+            padding: 12px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            font-size: 0.98rem;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
             background: white;
-            color: #333;
+            color: #0f172a;
             appearance: none;
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e3a8a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23334155' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
             background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 20px;
+            background-position: right 12px center;
+            background-size: 18px;
             padding-right: 40px;
         }
-        
+
         select:hover {
-            border-color: #1e3a8a;
-            box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.05);
+            border-color: #64748b;
         }
-        
+
         select:focus {
             outline: none;
-            border-color: #1e3a8a;
-            box-shadow: 0 0 0 4px rgba(30, 58, 138, 0.1);
+            border-color: #0f172a;
+            box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.12);
         }
-        
+
         .button-section {
-            text-align: center;
-            margin-bottom: 0;
             display: flex;
-            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
-        
+
         button {
-            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+            background: #0f172a;
             color: white;
-            padding: 14px 45px;
+            padding: 12px 18px;
             border: none;
-            border-radius: 8px;
-            font-size: 1em;
+            border-radius: 10px;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            min-width: 200px;
-            letter-spacing: 0.5px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            min-width: 210px;
+            letter-spacing: 0.02em;
         }
-        
+
         button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(30, 58, 138, 0.25);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
         }
-        
+
         button:active {
             transform: translateY(0);
         }
-        
+
+        .secondary-button {
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+        }
+
+        .secondary-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+        }
+
+        .info {
+            color: #0f172a;
+            background: #f8fafc;
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-top: 14px;
+            display: none;
+            border: 1px solid #cbd5e1;
+            font-weight: 500;
+            font-size: 0.92rem;
+        }
+
+        .info.show {
+            display: block;
+        }
+
         .results {
             display: none;
             animation: slideIn 0.5s ease;
         }
-        
+
         @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(20px);
+                transform: translateY(10px);
             }
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
-        
+
         .results.show {
             display: block;
         }
-        
+
         .section-title {
-            font-size: 1.2em;
+            font-size: 0.82rem;
             font-weight: 700;
-            color: #1e3a8a;
-            margin-bottom: 20px;
+            color: #475569;
+            margin-bottom: 12px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.08em;
         }
-        
+
         .goals-section {
-            background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%);
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 40px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 22px;
+            border-radius: 12px;
             display: grid;
             grid-template-columns: 1fr auto 1fr;
-            gap: 30px;
+            gap: 16px;
             align-items: center;
         }
-        
+
         @media (max-width: 768px) {
             .goals-section {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         .goal-card {
             text-align: center;
         }
-        
+
         .goal-value {
-            font-size: 3.5em;
+            font-size: 2.8rem;
             font-weight: 800;
-            color: #1e3a8a;
+            color: #0f172a;
             line-height: 1;
         }
-        
+
         .goal-label {
             color: #64748b;
-            font-size: 0.95em;
-            margin-top: 8px;
+            font-size: 0.92rem;
+            margin-top: 6px;
             font-weight: 500;
         }
-        
+
         .vs-divider {
             text-align: center;
-            color: #cbd5e1;
-            font-size: 1.5em;
-            font-weight: 300;
+            color: #94a3b8;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
         }
-        
+
         .probabilities {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-bottom: 40px;
+            gap: 12px;
         }
-        
+
         @media (max-width: 768px) {
             .probabilities {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         .prob-card {
-            background: white;
-            border: 1.5px solid #e0e7ff;
-            padding: 25px;
-            border-radius: 10px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 16px;
+            border-radius: 12px;
             text-align: center;
-            transition: all 0.3s ease;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
-        
+
         .prob-card:hover {
-            border-color: #1e3a8a;
-            box-shadow: 0 4px 12px rgba(30, 58, 138, 0.12);
+            border-color: #94a3b8;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
         }
-        
+
         .prob-label {
-            font-size: 0.9em;
+            font-size: 0.86rem;
             color: #64748b;
             font-weight: 500;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
-        
+
         .prob-value {
-            font-size: 2.8em;
+            font-size: 2rem;
             font-weight: 800;
-            color: #1e3a8a;
+            color: #0f172a;
             line-height: 1;
-            margin: 12px 0;
+            margin: 8px 0;
         }
-        
+
         .cote {
-            background: #f0f4ff;
-            color: #1e3a8a;
-            padding: 10px 12px;
+            background: #ffffff;
+            color: #0f172a;
+            padding: 8px 10px;
             border-radius: 6px;
             font-weight: 700;
-            font-size: 0.9em;
+            font-size: 0.83rem;
             display: inline-block;
-            margin-top: 12px;
-            border: 1px solid #e0e7ff;
+            margin-top: 8px;
+            border: 1px solid #cbd5e1;
         }
-        
+
         .results-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            border-radius: 10px;
+            overflow: hidden;
         }
-        
+
         .results-table th {
-            background: #f0f4ff;
-            color: #1e3a8a;
-            padding: 16px;
+            background: #f8fafc;
+            color: #334155;
+            padding: 12px;
             text-align: left;
             font-weight: 700;
-            font-size: 0.95em;
+            font-size: 0.76rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 2px solid #e0e7ff;
+            letter-spacing: 0.06em;
+            border-bottom: 1px solid #e2e8f0;
         }
-        
+
         .results-table td {
-            padding: 16px;
-            border-bottom: 1px solid #e0e7ff;
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
             color: #475569;
             font-weight: 500;
+            font-size: 0.92rem;
         }
-        
+
         .results-table tr:hover {
             background: #f8fafc;
         }
-        
+
         .results-table td:last-child {
             font-weight: 700;
-            color: #1e3a8a;
-            font-size: 1.05em;
+            color: #0f172a;
+            font-size: 0.95rem;
         }
-        
+
         .error {
             color: #991b1b;
             background: #fef2f2;
-            padding: 15px 20px;
+            padding: 12px 14px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-top: 14px;
             display: none;
             border: 1px solid #fecaca;
             font-weight: 500;
+            font-size: 0.92rem;
         }
-        
+
         .error.show {
             display: block;
         }
-        
+
         .footer {
             background: white;
-            border-radius: 12px;
-            padding: 30px;
-            margin-top: 40px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+            padding: 22px;
+            margin-top: 10px;
             color: #64748b;
-            font-size: 0.95em;
-            line-height: 1.8;
+            font-size: 0.9rem;
+            line-height: 1.7;
         }
-        
+
         .footer h3 {
-            color: #1e3a8a;
+            color: #334155;
             font-weight: 700;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             text-transform: uppercase;
-            font-size: 0.9em;
-            letter-spacing: 0.5px;
+            font-size: 0.76rem;
+            letter-spacing: 0.08em;
         }
-        
+
         .footer ul {
             list-style: none;
         }
-        
+
         .footer li {
-            padding: 4px 0;
+            padding: 2px 0;
         }
-        
+
         .loading {
             display: none;
             text-align: center;
-            color: #1e3a8a;
-            padding: 20px;
+            color: #334155;
+            padding: 16px;
         }
-        
+
         .loading.show {
             display: block;
         }
-        
+
         .spinner {
-            border: 3px solid #f0f4ff;
-            border-top: 3px solid #1e3a8a;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #0f172a;
             border-radius: 50%;
-            width: 30px;
-            height: 30px;
+            width: 26px;
+            height: 26px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
+            margin: 0 auto 8px;
         }
-        
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -471,18 +552,28 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="header">
-        <h1>Ligue 1 Match Prediction</h1>
-        <p>Forecast backed by EWMA analysis and Monte Carlo simulation</p>
+        <h1>Prédictions Football Top 5</h1>
+        <p>Interface simple, rapide et claire pour simuler vos matchs</p>
     </div>
     
     <div class="container">
         <div class="main-card">
+            <h2 class="form-title">Paramètres du match</h2>
             <form id="predictionForm">
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label for="league">Championnat</label>
+                    <select id="league" name="league" required>
+                        {% for code, nom in championnats.items() %}
+                        <option value="{{ code }}" {% if code == championnat_defaut %}selected{% endif %}>{{ nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <div class="form-section">
                     <div class="form-group">
-                        <label for="home_team">Home Team</label>
+                        <label for="home_team">Équipe à domicile</label>
                         <select id="home_team" name="home_team" required>
-                            <option value="">Select a team</option>
+                            <option value="">Sélectionner une équipe</option>
                             {% for team in equipes %}
                             <option value="{{ team }}">{{ team }}</option>
                             {% endfor %}
@@ -490,9 +581,9 @@ HTML_TEMPLATE = """
                     </div>
                     
                     <div class="form-group">
-                        <label for="away_team">Away Team</label>
+                        <label for="away_team">Équipe à l'extérieur</label>
                         <select id="away_team" name="away_team" required>
-                            <option value="">Select a team</option>
+                            <option value="">Sélectionner une équipe</option>
                             {% for team in equipes %}
                             <option value="{{ team }}">{{ team }}</option>
                             {% endfor %}
@@ -501,37 +592,39 @@ HTML_TEMPLATE = """
                 </div>
                 
                 <div class="button-section">
-                    <button type="submit">Predict Match</button>
+                    <button type="submit">Prédire le match</button>
+                    <button type="button" id="refreshBtn" class="secondary-button">Actualiser les données</button>
                 </div>
             </form>
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>Analyzing match...</p>
+                <p>Analyse du match...</p>
             </div>
             
+            <div class="info" id="infoMessage"></div>
             <div class="error" id="errorMessage"></div>
         </div>
         
         <div class="results" id="results">
             <div class="main-card">
-                <h2 class="section-title">Expected Goals</h2>
+                <h2 class="section-title">Buts attendus</h2>
                 <div class="goals-section" id="goalsSection"></div>
             </div>
             
             <div class="main-card">
-                <h2 class="section-title">Outcome Probabilities</h2>
+                <h2 class="section-title">Probabilités de résultat</h2>
                 <div class="probabilities" id="probabilities"></div>
             </div>
             
             <div class="main-card">
-                <h2 class="section-title">Fair Odds</h2>
+                <h2 class="section-title">Cotes justes</h2>
                 <table class="results-table" id="coteTable">
                     <thead>
                         <tr>
-                            <th>Outcome</th>
-                            <th>Probability</th>
-                            <th>Fair Odds</th>
+                            <th>Résultat</th>
+                            <th>Probabilité</th>
+                            <th>Cote juste</th>
                         </tr>
                     </thead>
                     <tbody id="coteBody"></tbody>
@@ -540,32 +633,70 @@ HTML_TEMPLATE = """
         </div>
         
         <div class="footer">
-            <h3>Methodology</h3>
+            <h3>Méthodologie</h3>
             <ul>
-                <li>Model based on goals scored and conceded</li>
-                <li>EWMA (span=10) to emphasize recent form</li>
-                <li>Separation of home/away statistics per team</li>
-                <li>Monte Carlo simulation using Poisson distribution</li>
+                <li>Data en temps réel depuis football-data.co.uk</li>
+                <li>EWMA (span=10) pour privilégier la forme récente</li>
+                <li>Statistiques domicile/extérieur séparées</li>
+                <li>Simulation Monte Carlo (distribution de Poisson)</li>
             </ul>
         </div>
     </div>
     
     <script>
+        function remplirEquipes(equipes) {
+            const homeSelect = document.getElementById('home_team');
+            const awaySelect = document.getElementById('away_team');
+
+            const defaultOptionHome = '<option value="">Sélectionner une équipe</option>';
+            const defaultOptionAway = '<option value="">Sélectionner une équipe</option>';
+            const options = equipes.map((team) => `<option value="${team}">${team}</option>`).join('');
+
+            homeSelect.innerHTML = defaultOptionHome + options;
+            awaySelect.innerHTML = defaultOptionAway + options;
+        }
+
+        async function chargerEquipes(championnat, forceReload = false) {
+            const infoDiv = document.getElementById('infoMessage');
+            const errorDiv = document.getElementById('errorMessage');
+            const endpoint = forceReload ? '/refresh' : '/teams';
+
+            infoDiv.classList.remove('show');
+            errorDiv.classList.remove('show');
+
+            const response = await fetch(`${endpoint}?league=${encodeURIComponent(championnat)}`);
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(data.error || 'Erreur lors du chargement des équipes');
+            }
+
+            remplirEquipes(data.equipes);
+
+            if (forceReload) {
+                infoDiv.textContent = `CSV actualisé : ${data.league_name}`;
+                infoDiv.classList.add('show');
+            }
+        }
+
         document.getElementById('predictionForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const league = document.getElementById('league').value;
             const homeTeam = document.getElementById('home_team').value;
             const awayTeam = document.getElementById('away_team').value;
+            const infoDiv = document.getElementById('infoMessage');
             const errorDiv = document.getElementById('errorMessage');
             const resultsDiv = document.getElementById('results');
             const loadingDiv = document.getElementById('loading');
             
+            infoDiv.classList.remove('show');
             errorDiv.classList.remove('show');
             resultsDiv.classList.remove('show');
             loadingDiv.classList.add('show');
             
             if (homeTeam === awayTeam) {
-                errorDiv.textContent = 'Please select two different teams';
+                errorDiv.textContent = 'Veuillez sélectionner deux équipes différentes';
                 errorDiv.classList.add('show');
                 loadingDiv.classList.remove('show');
                 return;
@@ -578,6 +709,7 @@ HTML_TEMPLATE = """
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
+                        league: league,
                         home_team: homeTeam,
                         away_team: awayTeam
                     })
@@ -607,17 +739,17 @@ HTML_TEMPLATE = """
                 
                 const probHTML = `
                     <div class="prob-card">
-                        <div class="prob-label">${homeTeam} Win</div>
+                        <div class="prob-label">Victoire ${homeTeam}</div>
                         <div class="prob-value">${data.prob_1}%</div>
                         <div class="cote">${data.cote_1}</div>
                     </div>
                     <div class="prob-card">
-                        <div class="prob-label">Draw</div>
+                        <div class="prob-label">Match nul</div>
                         <div class="prob-value">${data.prob_N}%</div>
                         <div class="cote">${data.cote_N}</div>
                     </div>
                     <div class="prob-card">
-                        <div class="prob-label">${awayTeam} Win</div>
+                        <div class="prob-label">Victoire ${awayTeam}</div>
                         <div class="prob-value">${data.prob_2}%</div>
                         <div class="cote">${data.cote_2}</div>
                     </div>
@@ -626,17 +758,17 @@ HTML_TEMPLATE = """
                 
                 const tableHTML = `
                     <tr>
-                        <td>${homeTeam} Win</td>
+                        <td>Victoire ${homeTeam}</td>
                         <td>${data.prob_1}%</td>
                         <td>${data.cote_1}</td>
                     </tr>
                     <tr>
-                        <td>Draw</td>
+                        <td>Match nul</td>
                         <td>${data.prob_N}%</td>
                         <td>${data.cote_N}</td>
                     </tr>
                     <tr>
-                        <td>${awayTeam} Win</td>
+                        <td>Victoire ${awayTeam}</td>
                         <td>${data.prob_2}%</td>
                         <td>${data.cote_2}</td>
                     </tr>
@@ -645,9 +777,48 @@ HTML_TEMPLATE = """
                 
                 resultsDiv.classList.add('show');
             } catch (error) {
-                errorDiv.textContent = 'Prediction error: ' + error.message;
+                errorDiv.textContent = 'Erreur de prédiction : ' + error.message;
                 errorDiv.classList.add('show');
                 loadingDiv.classList.remove('show');
+            }
+        });
+
+        document.getElementById('league').addEventListener('change', async (e) => {
+            const selectedLeague = e.target.value;
+            const errorDiv = document.getElementById('errorMessage');
+            const infoDiv = document.getElementById('infoMessage');
+            const resultsDiv = document.getElementById('results');
+
+            try {
+                await chargerEquipes(selectedLeague, false);
+                resultsDiv.classList.remove('show');
+                infoDiv.classList.remove('show');
+                errorDiv.classList.remove('show');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.add('show');
+            }
+        });
+
+        document.getElementById('refreshBtn').addEventListener('click', async () => {
+            const selectedLeague = document.getElementById('league').value;
+            const refreshBtn = document.getElementById('refreshBtn');
+            const errorDiv = document.getElementById('errorMessage');
+            const resultsDiv = document.getElementById('results');
+
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = 'Actualisation...';
+            errorDiv.classList.remove('show');
+
+            try {
+                await chargerEquipes(selectedLeague, true);
+                resultsDiv.classList.remove('show');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.add('show');
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = 'Actualiser les données';
             }
         });
     </script>
@@ -658,14 +829,55 @@ HTML_TEMPLATE = """
 # --- ROUTES ---
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, equipes=equipes)
+    modele = charger_modele_championnat(CHAMPIONNAT_DEFAUT)
+    return render_template_string(
+        HTML_TEMPLATE,
+        equipes=modele['equipes'],
+        championnats=CHAMPIONNATS,
+        championnat_defaut=CHAMPIONNAT_DEFAUT
+    )
+
+@app.route('/teams')
+def teams():
+    try:
+        championnat = request.args.get('league', CHAMPIONNAT_DEFAUT)
+        modele = charger_modele_championnat(championnat)
+        return jsonify({
+            'league': championnat,
+            'league_name': CHAMPIONNATS[championnat],
+            'equipes': modele['equipes']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/refresh')
+def refresh():
+    try:
+        championnat = request.args.get('league', CHAMPIONNAT_DEFAUT)
+        modele = charger_modele_championnat(championnat, force_reload=True)
+        return jsonify({
+            'league': championnat,
+            'league_name': CHAMPIONNATS[championnat],
+            'equipes': modele['equipes']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
         data = request.json
+        championnat = data.get('league', CHAMPIONNAT_DEFAUT)
         home_team = data.get('home_team')
         away_team = data.get('away_team')
+
+        if championnat not in CHAMPIONNATS:
+            return jsonify({'error': 'Championnat invalide'}), 400
+
+        modele = charger_modele_championnat(championnat)
+        stats_equipes = modele['stats_equipes']
+        avg_home = modele['avg_home']
+        avg_away = modele['avg_away']
         
         if not home_team or not away_team:
             return jsonify({'error': 'Équipes manquantes'}), 400

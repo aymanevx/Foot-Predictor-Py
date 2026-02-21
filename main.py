@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 
-df = pd.read_csv('https://www.football-data.co.uk/mmz4281/2526/F1.csv')
+df = pd.read_csv('https://www.football-data.co.uk/mmz4281/2526/SP1.csv')
 df = df[['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG']]
 df.columns = ['home_team', 'away_team', 'home_goals', 'away_goals']
 
@@ -119,12 +119,12 @@ def predire_et_simuler(equipe_dom, equipe_ext, stats, avg_h, avg_a, n_simulation
 
 try:
     # Prédiction : Lille vs Brest
-    p1, pN, p2 = predire_et_simuler('Lille', 'Brest', stats_equipes, avg_home, avg_away)
+    p1, pN, p2 = predire_et_simuler('Real Madrid', 'Barcelona', stats_equipes, avg_home, avg_away)
 
     print(f"\n--- RÉSULTATS SIMULATION (10 000 matchs) ---")
-    print(f"Victoire Lille: {p1:.1f}%")
+    print(f"Victoire Real: {p1:.1f}%")
     print(f"Match Nul :        {pN:.1f}%")
-    print(f"Victoire Brest: {p2:.1f}%")
+    print(f"Victoire Barca: {p2:.1f}%")
     
     # Calcul des cotes justes (Fair Odds)
     print(f"\n--- COTES DU MODÈLE ---")
